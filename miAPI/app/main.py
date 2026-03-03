@@ -1,8 +1,10 @@
 #importaciones
-from fastapi import FastAPI,status,HTTPException
+from fastapi import FastAPI,status,HTTPException, Depends
 from typing import Optional
 import asyncio
 from pydantic import BaseModel, Field
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 
 # Crear la aplicación FastAPI
 app = FastAPI(
@@ -22,6 +24,19 @@ class UsuarioBase(BaseModel):
     id: int = Field(..., gt=0, description="Identificador único del usuario", example=1)
     nombre: str = Field(..., min_length=3, max_length=25, description="Nombre del usuario", example="Jungkook")
     edad: int = Field(..., ge=0, le=120, description="Edad valida entre 0 y 120", example=28)
+
+
+ #seguridad con HTTP Basic
+security = HTTPBasic()
+def verificar_Peticion(credentials: HTTPBasicCredentials = Depends(security)):
+    usuarioAuth = secrets.compare_digest(credentials.username, "Guadalupe")
+    contraAuth = secrets.compare_digest(credentials.password, "BTS")
+    if not (usuarioAuth and contraAuth):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas",
+        )
+    return credentials.username
 
 #endpoints
 @app.get("/",tags=["Inicio"])
@@ -85,14 +100,14 @@ async def actualizar_usuario(id: int, usuario_actualizado: dict):
         status_code=404,
         detail="Usuario no encontrado")
 
-@app.delete("/v1/Usuarios/",tags=["CRUD usuarios"])
-async def eliminar_usuario(id: int):
+@app.delete("/v1/Usuarios/{id}",tags=["CRUD usuarios"])
+async def eliminar_usuario(id: int, usuarioAuth: str = Depends(verificar_Peticion)):
     for index, usr in enumerate(usuarios):
         if usr["id"] == id:
             usuario_eliminado = usuarios.pop(index)
             return {"status": "200",
-                    "message": "Usuario eliminado exitosamente",
-                    "datos" : usuario_eliminado}
+                    "message": f"Usuario eliminado exitosamente por: {usuarioAuth}",
+                    "datos": usuario_eliminado}
     raise HTTPException(
         status_code=404,
         detail="Usuario no encontrado")        
