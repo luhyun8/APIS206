@@ -1,11 +1,12 @@
 #importaciones
-from fastapi import FastAPI,status,HTTPException
+import secrets
+
+from fastapi import Depends, FastAPI,status,HTTPException
 from typing import Optional, List
 import asyncio
-from pydantic import BaseModel, Field, EmailStr
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel, Field
 from datetime import datetime
-
-from PRACTICA5.app.main import Prestamo
 
 # Crear la aplicación FastAPI
 app = FastAPI(
@@ -14,18 +15,25 @@ app = FastAPI(
     version="1.0."
 )
 
-# Simulación de base de datos
-libros = []
-prestamos = []
-usuarios = []
-
 #modelo de validación pydantic
 class Citas(BaseModel):
     id: int
     nombre: str = Field(..., min_length=5, max_length=50)
     apellido: str 
-    fecha_cita: int = Field(..., gt=0, le=datetime.now().year)
+    fecha_cita: int = Field(..., gt=datetime.now().year, le=datetime.now().year)
     motivo: str = Field(..., min_length=20,max_length=100)
+
+#seguridad con HTTP Basic
+security = HTTPBasic()
+def verificar_Peticion(credentials: HTTPBasicCredentials = Depends(security)):
+    usuarioAuth = secrets.compare_digest(credentials.username, "root")
+    contraAuth = secrets.compare_digest(credentials.password, "1234")
+    if not (usuarioAuth and contraAuth):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas",
+        )
+    return credentials.username
 
 
 #endpoints
@@ -58,57 +66,36 @@ async def listar_citas():
 @app.get("/v1/buscar/citas",tags=["Citas"])
 async def buscar_cita(id: int):
     await asyncio.sleep(2)  # Simula na operación asincrónica
-    resultados = [Citas for c in libros if c["id"] == id]
+    resultados = [c for c in Citas if c["id"] == id]
     if not resultados:
         raise HTTPException(status_code=400, detail="Cita no encontrada")
     return {"status": "200",
             "total": len(resultados),
             "datos": resultados}
 
-#registrar prestamo de libro
-@app.post("/v1/prestamos",tags=["Prestamos"])
-async def registrar_prestamo(prestamo: Prestamo):
-    # Verificar que el libro exista
-    libro_encontrado = None
-    for libro in libros:
-        if libro["id"] == prestamo.libro_id:
-            libro_encontrado = libro
-            break
-    if libro_encontrado is None:
-        raise HTTPException(status_code=400, detail="El libro no existe")
-    if libro_encontrado["estado"] == "prestado":
-        raise HTTPException(status_code=409, detail="El libro ya está prestado")
-    
-    libro_encontrado["estado"] = "prestado"
-    prestamos.append(prestamo.dict())
-    return {"status": "200",
-            "message": "Préstamo registrado exitosamente",
-            "datos": prestamo}
-
-#marcar libro como devuelto
-@app.put("/v1/prestamos/devolver/{libro_id}",tags=["Prestamos"])
-async def devolver_libro(libro_id: int):
-    for libro in libros:
-        if libro["id"] == libro_id:
-            if libro["estado"] == "prestado":
-                libro["estado"] = "disponible"
+#confirmar citas
+@app.put("/v1/citas/confirmar/{id}",tags=["Citas"])
+async def confirmar_cita(id: int):
+    for cita in Citas:
+        if cita["id"] == id:
+            if cita["estado"] == "pendiente":
+                cita["estado"] = "confirmada"
                 return {"status": "200",
-                        "message": "Libro devuelto exitosamente",
-                        "datos": libro}
+                        "message": "Cita confirmada exitosamente",
+                        "datos": cita}
             else:
-                raise HTTPException(status_code=400, detail="El libro no está prestado")
-    raise HTTPException(status_code=409, detail="Libro no encontrado")
+                raise HTTPException(status_code=400, detail="La cita no está pendiente")
+    raise HTTPException(status_code=409, detail="Cita no encontrada")
 
-
-#eliminar registro de prestamo
-@app.delete("/v1/prestamos/{id}",tags=["CRUD prestamos"])
-async def eliminar_prestamo(id: int):
-    for index, prestamo in enumerate(prestamos):
-        if prestamo["libro_id"] == id:
-            prestamo_eliminado = prestamos.pop(index)
+#eliminar citas
+@app.delete("/v1/citas/{id}",tags=["CRUD Citas"])
+async def eliminar_cita(id: int, usuarioAuth: str = Depends(verificar_Peticion)):
+    for index, cita in enumerate(Citas):
+        if cita["id"] == id:
+            cita_eliminada = Citas.pop(index)
             return {"status": "200",
-                    "message": "Prestamo eliminado exitosamente",
-                    "datos" : prestamo_eliminado}
+                    "message": "Cita eliminada exitosamente",
+                    "datos" : cita_eliminada}
     raise HTTPException(
         status_code=409,
-        detail="Prestamo no encontrado")       
+        detail="Cita no encontrada")       
